@@ -35,6 +35,14 @@ So `all` is based on the bot's local cache, not Telegram's full live member list
 | `/group list` | `/group list` | List saved groups |
 | `/reply` | `/reply devs Standup time` | Mention a saved group or `all` in the current chat |
 
+> In **group chats**, commands must be explicitly addressed to the bot to avoid collisions with other bots:
+>
+> - `/start@YourBotUsername`
+> - `/group@YourBotUsername list`
+> - `/reply@YourBotUsername all Heads up!`
+>
+> In **private chats**, the plain command form still works.
+
 ## Reply behavior
 
 `/reply <target> <message>` supports:
@@ -44,9 +52,9 @@ So `all` is based on the bot's local cache, not Telegram's full live member list
 Examples:
 
 ```text
-/reply devs Standup time
-/reply all Heads up!
-/reply "team alpha" "deploy in 5 minutes"
+/reply@YourBotUsername devs Standup time
+/reply@YourBotUsername all Heads up!
+/reply@YourBotUsername "team alpha" "deploy in 5 minutes"
 ```
 
 ### Important notes
@@ -55,6 +63,7 @@ Examples:
 - mentions happen in the same chat where the command was used
 - the bot only mentions users it can identify by username in its known roster or saved groups
 - when `all` is incomplete, the bot warns about it
+- in groups, bare commands are ignored unless they are addressed to this bot with `@botusername`
 
 ## Prerequisites
 
