@@ -1,0 +1,22 @@
+.agents/
+.atl
+.claude
+.kiro
+.windsurf
+skills-lock
+skills-lock.json
+.env
+
+# Local runtime data
+data/*.json
+data/*.db
+
+# Local oddities
+NUL
+
+# Logs
+*.log
+
+# OS / editor leftovers
+.DS_Store
+Thumbs.db

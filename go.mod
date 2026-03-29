@@ -1,0 +1,5 @@
+module tg-replyer
+
+go 1.25.0
+
+require github.com/go-telegram/bot v1.10.0
