@@ -24,18 +24,27 @@ type Response struct {
 	ParseMode string // "", "HTML", or "MarkdownV2"
 }
 
+// ChatMemberCounter provides the total member count for a chat.
+// Implementations typically call the Telegram API (GetChatMemberCount).
+type ChatMemberCounter interface {
+	GetChatMemberCount(ctx context.Context, chatID int64) (int, error)
+}
+
 // Router parses slash commands and dispatches to domain services.
 // It has NO dependency on any transport package (Telegram, HTTP, etc.).
 type Router struct {
 	groups  *groups.Service
 	tracker members.Tracker
+	counter ChatMemberCounter // nil-safe; triggers fallback when nil
 }
 
 // New creates a Router wired to the given domain services.
-func New(groupsSvc *groups.Service, tracker members.Tracker) *Router {
+// counter may be nil — the router degrades gracefully.
+func New(groupsSvc *groups.Service, tracker members.Tracker, counter ChatMemberCounter) *Router {
 	return &Router{
 		groups:  groupsSvc,
 		tracker: tracker,
+		counter: counter,
 	}
 }
 
@@ -164,6 +173,7 @@ func (r *Router) handleReply(ctx context.Context, chatID int64, args []string) R
 }
 
 // handleReplyAll resolves the "all" target from the known-member roster.
+// When a ChatMemberCounter is available, it appends coverage metadata.
 func (r *Router) handleReplyAll(ctx context.Context, chatID int64, message string) Response {
 	known, err := r.tracker.List(ctx, chatID)
 	if err != nil {
@@ -174,8 +184,31 @@ func (r *Router) handleReplyAll(ctx context.Context, chatID int64, message strin
 	}
 
 	mentions := buildMentions(known)
-	text := mentions + " " + message + "\n(roster may be incomplete \u2014 only known members mentioned)"
+
+	// Build the coverage disclaimer.
+	disclaimer := r.buildCoverageDisclaimer(ctx, chatID, len(known))
+
+	text := mentions + " " + message + "\n" + disclaimer
 	return Response{Text: text}
+}
+
+// buildCoverageDisclaimer produces a parenthetical coverage line.
+// It queries the ChatMemberCounter when available and degrades gracefully.
+func (r *Router) buildCoverageDisclaimer(ctx context.Context, chatID int64, knownCount int) string {
+	if r.counter == nil {
+		return "(roster may be incomplete — only known members mentioned)"
+	}
+
+	total, err := r.counter.GetChatMemberCount(ctx, chatID)
+	if err != nil {
+		return "(roster may be incomplete — only known members mentioned)"
+	}
+
+	if knownCount > total {
+		return fmt.Sprintf("(notifying %d members — roster may be outdated)", knownCount)
+	}
+
+	return fmt.Sprintf("(notifying %d of %d members)", knownCount, total)
 }
 
 // handleReplyGroup resolves a named group target.

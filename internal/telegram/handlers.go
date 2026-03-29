@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"strings"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -43,6 +44,10 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 // handleCommand delegates every slash command to the commands.Router and
 // sends the response text back via Telegram.
 // It also passively tracks the sender before routing the command.
+//
+// In group/supergroup chats, the command must include @botusername
+// (e.g., /reply@mybot). Bare commands and commands addressed to other
+// bots are silently ignored. In private chats, no suffix is required.
 func (b *Bot) handleCommand(ctx context.Context, _ *bot.Bot, update *models.Update) {
 	if update.Message == nil {
 		return
@@ -53,7 +58,18 @@ func (b *Bot) handleCommand(ctx context.Context, _ *bot.Bot, update *models.Upda
 		_ = b.tracker.Track(ctx, update.Message.Chat.ID, update.Message.From.Username)
 	}
 
-	resp := b.router.Handle(ctx, update.Message.Chat.ID, update.Message.Text)
+	text := update.Message.Text
+
+	// In group/supergroup chats, enforce @botusername addressing.
+	chatType := update.Message.Chat.Type
+	if chatType == "group" || chatType == "supergroup" {
+		text = b.normalizeGroupCommand(text)
+		if text == "" {
+			return // not addressed to us — silently ignore
+		}
+	}
+
+	resp := b.router.Handle(ctx, update.Message.Chat.ID, text)
 
 	params := &bot.SendMessageParams{
 		ChatID: update.Message.Chat.ID,
@@ -64,6 +80,39 @@ func (b *Bot) handleCommand(ctx context.Context, _ *bot.Bot, update *models.Upda
 	}
 
 	b.sender.SendMessage(ctx, params)
+}
+
+// normalizeGroupCommand checks that the command token in text contains
+// @botusername. If so, it returns the text with the @botusername stripped
+// from the command token. Otherwise, it returns "" to signal the message
+// should be silently ignored.
+func (b *Bot) normalizeGroupCommand(text string) string {
+	if b.botUsername == "" {
+		return "" // safety: no cached username means we can't verify addressing
+	}
+
+	// Extract the first whitespace-delimited token (the command token).
+	cmdToken := text
+	rest := ""
+	if idx := strings.IndexByte(text, ' '); idx >= 0 {
+		cmdToken = text[:idx]
+		rest = text[idx:] // preserves leading space + rest of message
+	}
+
+	// Check for @suffix in the command token (e.g., "/reply@mybot").
+	atIdx := strings.IndexByte(cmdToken, '@')
+	if atIdx < 0 {
+		return "" // bare command in group — ignore
+	}
+
+	targetBot := cmdToken[atIdx+1:]
+	if !strings.EqualFold(targetBot, b.botUsername) {
+		return "" // addressed to a different bot — ignore
+	}
+
+	// Strip @botusername from the command token.
+	normalized := cmdToken[:atIdx] + rest
+	return normalized
 }
 
 // noopTracker is a no-op implementation of members.Tracker for backward

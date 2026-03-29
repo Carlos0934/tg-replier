@@ -25,13 +25,21 @@ type messageSender interface {
 	SendMessage(ctx context.Context, params *bot.SendMessageParams) (*models.Message, error)
 }
 
+// meGetter abstracts the GetMe call so startup can be unit-tested
+// without a live Telegram API.
+type meGetter interface {
+	GetMe(ctx context.Context) (*models.User, error)
+}
+
 // Bot wraps the Telegram client and delegates command handling to
 // a commandHandler (typically commands.Router). It is a pure transport adapter.
 type Bot struct {
-	client  *bot.Bot
-	router  commandHandler
-	sender  messageSender // defaults to client; override in tests
-	tracker members.Tracker
+	client      *bot.Bot
+	router      commandHandler
+	sender      messageSender // defaults to client; override in tests
+	meGetter    meGetter      // defaults to client; override in tests
+	tracker     members.Tracker
+	botUsername string // cached from GetMe at startup
 }
 
 // New creates a Bot, initialises the Telegram client and sender adapter,
@@ -50,14 +58,34 @@ func New(cfg *config.Config, groupsSvc *groups.Service, tracker members.Tracker)
 	}
 	b.client = client
 	b.sender = client
+	b.meGetter = client
 
-	b.router = commands.New(groupsSvc, tracker)
+	b.router = commands.New(groupsSvc, tracker, b)
 	b.registerHandlers()
 
 	return b, nil
 }
 
-// Start begins polling for updates. It blocks until ctx is cancelled.
-func (b *Bot) Start(ctx context.Context) {
+// Start resolves the bot username via GetMe and begins polling for updates.
+// It blocks until ctx is cancelled.
+func (b *Bot) Start(ctx context.Context) error {
+	me, err := b.meGetter.GetMe(ctx)
+	if err != nil {
+		return fmt.Errorf("resolving bot username: %w", err)
+	}
+	b.botUsername = me.Username
 	b.client.Start(ctx)
+	return nil
+}
+
+// GetChatMemberCount returns the total number of members in a chat
+// by calling the Telegram API. It implements commands.ChatMemberCounter.
+func (b *Bot) GetChatMemberCount(ctx context.Context, chatID int64) (int, error) {
+	count, err := b.client.GetChatMemberCount(ctx, &bot.GetChatMemberCountParams{
+		ChatID: chatID,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
 }

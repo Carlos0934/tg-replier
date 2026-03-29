@@ -66,15 +66,32 @@ func (m *mockTracker) List(_ context.Context, chatID int64) ([]string, error) {
 	return m.roster[chatID], nil
 }
 
+// --- mock ChatMemberCounter ---
+
+type mockCounter struct {
+	count int
+	err   error
+}
+
+func (m *mockCounter) GetChatMemberCount(_ context.Context, _ int64) (int, error) {
+	return m.count, m.err
+}
+
 // Helpers for readable Member construction.
 func um(handle string) groups.Member {
 	return groups.Member{Kind: "username", Handle: handle}
 }
 
-// newRouter creates a Router with mock dependencies for testing.
+// newRouter creates a Router with mock dependencies for testing (nil counter).
 func newRouter(repo *mockRepo, tracker *mockTracker) *commands.Router {
 	groupsSvc := groups.New(repo)
-	return commands.New(groupsSvc, tracker)
+	return commands.New(groupsSvc, tracker, nil)
+}
+
+// newRouterWithCounter creates a Router with a ChatMemberCounter for testing.
+func newRouterWithCounter(repo *mockRepo, tracker *mockTracker, counter commands.ChatMemberCounter) *commands.Router {
+	groupsSvc := groups.New(repo)
+	return commands.New(groupsSvc, tracker, counter)
 }
 
 // testChatID is a fixed chat ID used in tests that don't care about the value.
@@ -551,5 +568,95 @@ func TestRouter_Reply_NoDMFormat(t *testing.T) {
 	}
 	if !strings.Contains(resp.Text, "@alice") || !strings.Contains(resp.Text, "@bob") {
 		t.Errorf("expected mentions in response, got %q", resp.Text)
+	}
+}
+
+// --- /reply all coverage messaging tests ---
+
+// Task 3.5: Counter returns (7, 10) → "(notifying 7 of 10 members)".
+func TestRouter_Reply_All_CoverageAvailable(t *testing.T) {
+	tracker := newMockTracker(map[int64][]string{
+		testChatID: {"alice", "bob", "carol", "dave", "eve", "frank", "grace"},
+	})
+	counter := &mockCounter{count: 10}
+	r := newRouterWithCounter(&mockRepo{}, tracker, counter)
+
+	resp := r.Handle(t.Context(), testChatID, "/reply all Stand-up time")
+	if !strings.Contains(resp.Text, "(notifying 7 of 10 members)") {
+		t.Errorf("expected coverage line, got %q", resp.Text)
+	}
+}
+
+// Task 3.6: Counter returns (8, 6) → roster may be outdated.
+func TestRouter_Reply_All_StaleCache(t *testing.T) {
+	tracker := newMockTracker(map[int64][]string{
+		testChatID: {"a", "b", "c", "d", "e", "f", "g", "h"},
+	})
+	counter := &mockCounter{count: 6}
+	r := newRouterWithCounter(&mockRepo{}, tracker, counter)
+
+	resp := r.Handle(t.Context(), testChatID, "/reply all hello")
+	if !strings.Contains(resp.Text, "roster may be outdated") {
+		t.Errorf("expected stale-cache warning, got %q", resp.Text)
+	}
+	if !strings.Contains(resp.Text, "notifying 8 members") {
+		t.Errorf("expected known count in message, got %q", resp.Text)
+	}
+}
+
+// Task 3.7: Nil counter → generic fallback disclaimer.
+// Asserts: mentions are sent to all known members, generic disclaimer is present,
+// and NO numeric total appears (no "X of Y" pattern).
+func TestRouter_Reply_All_NilCounter(t *testing.T) {
+	tracker := newMockTracker(map[int64][]string{
+		testChatID: {"alice", "bob"},
+	})
+	r := newRouter(&mockRepo{}, tracker) // nil counter
+
+	resp := r.Handle(t.Context(), testChatID, "/reply all hello")
+
+	// Must contain mentions for all known members.
+	if !strings.Contains(resp.Text, "@alice") {
+		t.Errorf("expected @alice mention, got %q", resp.Text)
+	}
+	if !strings.Contains(resp.Text, "@bob") {
+		t.Errorf("expected @bob mention, got %q", resp.Text)
+	}
+	// Must contain the generic fallback disclaimer.
+	if !strings.Contains(resp.Text, "roster may be incomplete") {
+		t.Errorf("expected generic disclaimer, got %q", resp.Text)
+	}
+	// Must NOT contain any numeric total — no "notifying X of Y members" pattern.
+	if strings.Contains(resp.Text, "notifying") {
+		t.Errorf("should not contain 'notifying' with nil counter, got %q", resp.Text)
+	}
+}
+
+// Task 3.8: Counter returns error → generic fallback disclaimer.
+// Asserts: mentions are sent to all known members, generic disclaimer is present,
+// and NO numeric total appears (no "X of Y" pattern).
+func TestRouter_Reply_All_CounterError(t *testing.T) {
+	tracker := newMockTracker(map[int64][]string{
+		testChatID: {"alice", "bob"},
+	})
+	counter := &mockCounter{err: errors.New("api timeout")}
+	r := newRouterWithCounter(&mockRepo{}, tracker, counter)
+
+	resp := r.Handle(t.Context(), testChatID, "/reply all hello")
+
+	// Must contain mentions for all known members.
+	if !strings.Contains(resp.Text, "@alice") {
+		t.Errorf("expected @alice mention, got %q", resp.Text)
+	}
+	if !strings.Contains(resp.Text, "@bob") {
+		t.Errorf("expected @bob mention, got %q", resp.Text)
+	}
+	// Must contain the generic fallback disclaimer.
+	if !strings.Contains(resp.Text, "roster may be incomplete") {
+		t.Errorf("expected generic disclaimer on counter error, got %q", resp.Text)
+	}
+	// Must NOT contain any numeric total — no "notifying X of Y members" pattern.
+	if strings.Contains(resp.Text, "notifying") {
+		t.Errorf("should not contain 'notifying' on error, got %q", resp.Text)
 	}
 }

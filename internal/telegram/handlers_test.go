@@ -371,3 +371,138 @@ func TestDefaultHandler_TracksMessageAndJoinCombined(t *testing.T) {
 		t.Error("expected 'joiner' to be tracked")
 	}
 }
+
+// --- Group command addressing tests ---
+
+// TestHandleCommand_BareCommandInGroup_Ignored verifies that a bare command
+// (without @botusername) in a group chat is silently ignored.
+func TestHandleCommand_BareCommandInGroup_Ignored(t *testing.T) {
+	spy := &spyRouter{response: commands.Response{Text: "should not see this"}}
+	ss := &spySender{}
+	st := &spyTracker{}
+	b := &Bot{router: spy, sender: ss, tracker: st, botUsername: "mybot"}
+
+	update := &models.Update{
+		Message: &models.Message{
+			Text: "/reply all hello",
+			Chat: models.Chat{ID: 100, Type: "group"},
+			From: &models.User{Username: "alice"},
+		},
+	}
+
+	b.handleCommand(t.Context(), nil, update)
+
+	if spy.called {
+		t.Error("router should NOT be called for bare command in group")
+	}
+	if ss.called {
+		t.Error("sender should NOT be called for bare command in group")
+	}
+}
+
+// TestHandleCommand_AddressedCommandInGroup_Routed verifies that
+// /reply@mybot in a group chat is normalized to /reply and routed.
+func TestHandleCommand_AddressedCommandInGroup_Routed(t *testing.T) {
+	spy := &spyRouter{response: commands.Response{Text: "ok"}}
+	ss := &spySender{}
+	st := &spyTracker{}
+	b := &Bot{router: spy, sender: ss, tracker: st, botUsername: "mybot"}
+
+	update := &models.Update{
+		Message: &models.Message{
+			Text: "/reply@mybot all hello",
+			Chat: models.Chat{ID: 100, Type: "supergroup"},
+			From: &models.User{Username: "alice"},
+		},
+	}
+
+	b.handleCommand(t.Context(), nil, update)
+
+	if !spy.called {
+		t.Fatal("router should be called for addressed command in group")
+	}
+	if spy.lastText != "/reply all hello" {
+		t.Errorf("expected normalized text %q, got %q", "/reply all hello", spy.lastText)
+	}
+	if !ss.called {
+		t.Fatal("sender should be called")
+	}
+}
+
+// TestHandleCommand_OtherBotInGroup_Ignored verifies that a command
+// addressed to a different bot in a group is silently ignored.
+func TestHandleCommand_OtherBotInGroup_Ignored(t *testing.T) {
+	spy := &spyRouter{response: commands.Response{Text: "should not see this"}}
+	ss := &spySender{}
+	st := &spyTracker{}
+	b := &Bot{router: spy, sender: ss, tracker: st, botUsername: "mybot"}
+
+	update := &models.Update{
+		Message: &models.Message{
+			Text: "/reply@otherbot all hello",
+			Chat: models.Chat{ID: 100, Type: "group"},
+			From: &models.User{Username: "alice"},
+		},
+	}
+
+	b.handleCommand(t.Context(), nil, update)
+
+	if spy.called {
+		t.Error("router should NOT be called for command addressed to different bot")
+	}
+	if ss.called {
+		t.Error("sender should NOT be called for command addressed to different bot")
+	}
+}
+
+// TestHandleCommand_BareCommandInPrivate_Processed verifies that a bare
+// command (without @botusername) in a private chat is processed normally.
+func TestHandleCommand_BareCommandInPrivate_Processed(t *testing.T) {
+	spy := &spyRouter{response: commands.Response{Text: "ok"}}
+	ss := &spySender{}
+	st := &spyTracker{}
+	b := &Bot{router: spy, sender: ss, tracker: st, botUsername: "mybot"}
+
+	update := &models.Update{
+		Message: &models.Message{
+			Text: "/reply all hello",
+			Chat: models.Chat{ID: 100, Type: "private"},
+			From: &models.User{Username: "alice"},
+		},
+	}
+
+	b.handleCommand(t.Context(), nil, update)
+
+	if !spy.called {
+		t.Fatal("router should be called for bare command in private chat")
+	}
+	if spy.lastText != "/reply all hello" {
+		t.Errorf("expected exact text %q, got %q", "/reply all hello", spy.lastText)
+	}
+}
+
+// TestHandleCommand_CaseInsensitiveAddressing verifies that the @botusername
+// check is case-insensitive (Telegram usernames are case-insensitive).
+func TestHandleCommand_CaseInsensitiveAddressing(t *testing.T) {
+	spy := &spyRouter{response: commands.Response{Text: "ok"}}
+	ss := &spySender{}
+	st := &spyTracker{}
+	b := &Bot{router: spy, sender: ss, tracker: st, botUsername: "MyBot"}
+
+	update := &models.Update{
+		Message: &models.Message{
+			Text: "/reply@mybot all hello",
+			Chat: models.Chat{ID: 100, Type: "group"},
+			From: &models.User{Username: "alice"},
+		},
+	}
+
+	b.handleCommand(t.Context(), nil, update)
+
+	if !spy.called {
+		t.Fatal("router should be called — case-insensitive match")
+	}
+	if spy.lastText != "/reply all hello" {
+		t.Errorf("expected normalized text %q, got %q", "/reply all hello", spy.lastText)
+	}
+}

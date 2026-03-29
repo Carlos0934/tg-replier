@@ -1,0 +1,17 @@
+services:
+  tg-replier:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tg-replier
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATA_DIR: /app/data
+    volumes:
+      - tg-replier-data:/app/data
+    init: true
+
+volumes:
+  tg-replier-data:

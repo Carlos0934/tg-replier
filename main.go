@@ -39,6 +39,8 @@ func main() {
 	defer cancel()
 
 	log.Println("bot starting...")
-	b.Start(ctx)
+	if err := b.Start(ctx); err != nil {
+		log.Fatalf("bot start: %v", err)
+	}
 	log.Println("bot stopped")
 }
