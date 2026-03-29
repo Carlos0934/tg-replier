@@ -1,6 +1,6 @@
-# TG-Replyer
+# TG-Replier
 
-TG-Replyer is a small Telegram bot for group mentions.
+TG-Replier is a small Telegram bot for group mentions.
 
 It lets you:
 - save named mention groups
@@ -25,7 +25,7 @@ Because Telegram Bot API does not provide a full chat roster on demand, the bot 
 
 So `all` is based on the bot's local cache, not Telegram's full live member list.
 
-## Commands
+## Bot Commands
 
 | Command | Example | Description |
 |---|---|---|
@@ -56,17 +56,19 @@ Examples:
 - the bot only mentions users it can identify by username in its known roster or saved groups
 - when `all` is incomplete, the bot warns about it
 
-## Setup
+## Prerequisites
 
-### Requirements
 - Go 1.25+
 - a bot token from [@BotFather](https://t.me/BotFather)
+- Docker (optional, for containerized deployment)
+
+## Setup
 
 ### Run locally
 
 ```bash
 git clone <repo-url>
-cd tg-replyer
+cd tg-replier
 cp .env.example .env
 # set BOT_TOKEN in .env
 source .env && go run .
@@ -74,7 +76,7 @@ source .env && go run .
 
 You can also export environment variables directly instead of sourcing `.env`.
 
-## Environment variables
+## Environment Variables
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
@@ -101,6 +103,40 @@ internal/
 ├── storage/json/  JSON persistence
 └── telegram/      Telegram transport adapter
 ```
+
+## Docker
+
+### Build the image
+
+```bash
+docker build -t tg-replier .
+```
+
+### Run the container
+
+```bash
+docker run -d \
+  --name tg-replier \
+  -e BOT_TOKEN=your-telegram-bot-token \
+  -v tg-replier-data:/app/data \
+  tg-replier
+```
+
+The container:
+- runs as a non-root user (`appuser`, UID 1000)
+- expects `BOT_TOKEN` via the environment
+- stores JSON data in `/app/data` — mount a volume there for persistence
+- has no exposed ports (the bot uses outbound polling only)
+
+### Deploy on Dokploy
+
+1. Create a new **Application** in Dokploy and connect this repository.
+2. Set the build method to **Dockerfile** (Dokploy will detect the `Dockerfile` automatically).
+3. Add the environment variable `BOT_TOKEN` in the application settings.
+4. Add a **persistent volume** mapped to `/app/data` so the bot's JSON data survives redeployments.
+5. Deploy. No port mapping is needed — the bot is a worker process, not an HTTP service.
+
+> **Tip**: If Dokploy shows the service as "unhealthy" because there is no HTTP health check, configure the health check to use a simple process check or disable it. The bot runs as a long-lived polling process.
 
 ## Current limitations
 

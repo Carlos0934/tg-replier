@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"tg-replyer/internal/groups"
+	"tg-replier/internal/groups"
 )
 
 // mockRepo is a simple in-memory groups.Repository for testing.

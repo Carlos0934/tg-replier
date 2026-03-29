@@ -8,9 +8,9 @@ import (
 	"sync"
 	"testing"
 
-	"tg-replyer/internal/groups"
-	"tg-replyer/internal/members"
-	jsonstorage "tg-replyer/internal/storage/json"
+	"tg-replier/internal/groups"
+	"tg-replier/internal/members"
+	jsonstorage "tg-replier/internal/storage/json"
 )
 
 // Compile-time checks.

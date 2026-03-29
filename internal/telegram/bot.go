@@ -7,10 +7,10 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
-	"tg-replyer/internal/commands"
-	"tg-replyer/internal/config"
-	"tg-replyer/internal/groups"
-	"tg-replyer/internal/members"
+	"tg-replier/internal/commands"
+	"tg-replier/internal/config"
+	"tg-replier/internal/groups"
+	"tg-replier/internal/members"
 )
 
 // commandHandler abstracts slash-command routing so the transport layer

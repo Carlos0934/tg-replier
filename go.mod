@@ -1,4 +1,4 @@
-module tg-replyer
+module tg-replier
 
 go 1.25.0
 

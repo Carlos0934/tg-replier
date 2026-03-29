@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"tg-replyer/internal/config"
+	"tg-replier/internal/config"
 )
 
 func TestLoad_TokenPresent(t *testing.T) {

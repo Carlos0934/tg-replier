@@ -6,7 +6,7 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
-	"tg-replyer/internal/members"
+	"tg-replier/internal/members"
 )
 
 // registerHandlers wires command handlers onto the bot client.

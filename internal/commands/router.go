@@ -7,8 +7,8 @@ import (
 	"sort"
 	"strings"
 
-	"tg-replyer/internal/groups"
-	"tg-replyer/internal/members"
+	"tg-replier/internal/groups"
+	"tg-replier/internal/members"
 )
 
 // Sentinel errors for the commands domain.
@@ -65,7 +65,7 @@ func (r *Router) Handle(ctx context.Context, chatID int64, text string) Response
 }
 
 func (r *Router) handleStart() Response {
-	return Response{Text: "Welcome to TG-Replyer! Use /group and /reply to manage reply groups."}
+	return Response{Text: "Welcome to TG-Replier! Use /group and /reply to manage reply groups."}
 }
 
 func (r *Router) handleGroup(ctx context.Context, args []string) Response {

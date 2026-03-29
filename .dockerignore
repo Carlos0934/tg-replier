@@ -1,0 +1,36 @@
+# Version control
+.git/
+.gitignore
+
+# Runtime data (must be volume-mounted, not baked in)
+data/
+
+# Environment files (secrets)
+.env
+.env.*
+!.env.example
+
+# Editor / agent / IDE metadata
+.agents/
+.atl/
+.claude/
+.kiro/
+.windsurf/
+.vscode/
+.idea/
+
+# OS leftovers
+.DS_Store
+Thumbs.db
+NUL
+
+# Build artifacts
+*.exe
+*.log
+*.test
+
+# Documentation (not needed in runtime image)
+*.md
+
+# Lock files
+skills-lock.json

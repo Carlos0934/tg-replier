@@ -6,10 +6,10 @@ import (
 	"os/signal"
 	"syscall"
 
-	"tg-replyer/internal/config"
-	"tg-replyer/internal/groups"
-	jsonstorage "tg-replyer/internal/storage/json"
-	"tg-replyer/internal/telegram"
+	"tg-replier/internal/config"
+	"tg-replier/internal/groups"
+	jsonstorage "tg-replier/internal/storage/json"
+	"tg-replier/internal/telegram"
 )
 
 func main() {

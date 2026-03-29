@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"tg-replyer/internal/groups"
+	"tg-replier/internal/groups"
 )
 
 // data is the on-disk JSON schema for groups.json.

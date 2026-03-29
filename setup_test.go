@@ -149,3 +149,124 @@ func TestGitignore_ExcludesEnv(t *testing.T) {
 		t.Error(".gitignore does not contain .env exclusion rule")
 	}
 }
+
+// --- Spec: Multi-Stage Dockerfile ---
+
+// Scenario: Successful image build (structural validation)
+// Verifies the Dockerfile exists and uses a multi-stage build with required
+// properties: static compilation, minimal runtime, CA certs, non-root user.
+func TestDockerfile_MultiStageBuild(t *testing.T) {
+	content := rootFile(t, "Dockerfile")
+
+	// Must have at least two FROM instructions (multi-stage)
+	fromCount := 0
+	scanner := bufio.NewScanner(strings.NewReader(content))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(strings.ToUpper(line), "FROM ") {
+			fromCount++
+		}
+	}
+	if fromCount < 2 {
+		t.Errorf("Dockerfile must be multi-stage (expected >= 2 FROM instructions, got %d)", fromCount)
+	}
+
+	// Must compile with CGO_ENABLED=0 for a static binary
+	if !strings.Contains(content, "CGO_ENABLED=0") {
+		t.Error("Dockerfile must compile with CGO_ENABLED=0 for a static binary")
+	}
+
+	// Must install CA certificates for TLS to api.telegram.org
+	if !strings.Contains(content, "ca-certificates") {
+		t.Error("Dockerfile must install ca-certificates for outbound TLS")
+	}
+}
+
+// Scenario: Non-root execution
+// The Dockerfile must declare a non-root USER.
+func TestDockerfile_NonRootUser(t *testing.T) {
+	content := rootFile(t, "Dockerfile")
+
+	scanner := bufio.NewScanner(strings.NewReader(content))
+	hasUser := false
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(strings.ToUpper(line), "USER ") {
+			user := strings.TrimSpace(line[5:])
+			if user != "root" && user != "" {
+				hasUser = true
+			}
+		}
+	}
+	if !hasUser {
+		t.Error("Dockerfile must declare a non-root USER")
+	}
+
+	// Must NOT have EXPOSE (worker-only bot, outbound polling)
+	if strings.Contains(strings.ToUpper(content), "EXPOSE ") {
+		t.Error("Dockerfile must NOT expose any ports (bot uses outbound polling only)")
+	}
+}
+
+// --- Spec: Build Context Exclusion (.dockerignore) ---
+
+// Scenario: Clean build context
+// .dockerignore must exclude non-essential files per the spec.
+func TestDockerignore_ExcludesRequiredPatterns(t *testing.T) {
+	content := rootFile(t, ".dockerignore")
+
+	// Spec-required exclusions
+	required := []string{
+		".git/",
+		"data/",
+		".env",
+		"*.md",
+		".agents/",
+		".atl/",
+		"*.test",
+	}
+	for _, pattern := range required {
+		if !strings.Contains(content, pattern) {
+			t.Errorf(".dockerignore must exclude %q", pattern)
+		}
+	}
+}
+
+// --- Spec: Runtime Environment Variables ---
+
+// Scenario: Dockerfile sets DATA_DIR default
+// The Dockerfile must set ENV DATA_DIR to a predictable container path.
+func TestDockerfile_DataDirDefault(t *testing.T) {
+	content := rootFile(t, "Dockerfile")
+
+	if !strings.Contains(content, "ENV DATA_DIR=") {
+		t.Error("Dockerfile must set ENV DATA_DIR to a default container path")
+	}
+}
+
+// --- Spec: Deployment Documentation (README) ---
+
+// Scenario: README documents Docker deployment
+// README must contain Docker build, run, and Dokploy instructions.
+func TestReadme_DockerDeploymentSection(t *testing.T) {
+	content := rootFile(t, "README.md")
+
+	checks := []struct {
+		search string
+		label  string
+	}{
+		{"## Docker", "Docker section heading"},
+		{"docker build", "docker build command"},
+		{"docker run", "docker run command"},
+		{"BOT_TOKEN", "BOT_TOKEN environment variable"},
+		{"/app/data", "data volume mount path"},
+		{"Dokploy", "Dokploy deployment reference"},
+		{"volume", "volume persistence guidance"},
+		{"non-root", "non-root user documentation"},
+	}
+	for _, c := range checks {
+		if !strings.Contains(content, c.search) {
+			t.Errorf("README Docker section must contain %s (%q)", c.label, c.search)
+		}
+	}
+}

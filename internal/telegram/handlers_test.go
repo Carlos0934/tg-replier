@@ -7,7 +7,7 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
-	"tg-replyer/internal/commands"
+	"tg-replier/internal/commands"
 )
 
 // TestHandleCommand_NilMessage verifies the nil-message guard doesn't panic.

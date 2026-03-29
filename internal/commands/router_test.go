@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"tg-replyer/internal/commands"
-	"tg-replyer/internal/groups"
+	"tg-replier/internal/commands"
+	"tg-replier/internal/groups"
 )
 
 // --- mock repository ---
