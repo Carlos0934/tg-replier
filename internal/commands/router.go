@@ -209,7 +209,11 @@ func (r *Router) handleReplyGroup(ctx context.Context, groupName string, message
 	for i, m := range target.Members {
 		usernames[i] = m.DisplayName()
 	}
-	return Response{Text: buildMentions(usernames) + " " + message}
+	text := buildMentions(usernames)
+	if message != "" {
+		text += " " + message
+	}
+	return Response{Text: text}
 }
 
 // buildMentions joins usernames into a "@user1 @user2" string.
