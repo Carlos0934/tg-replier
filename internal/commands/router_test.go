@@ -329,11 +329,73 @@ func TestRouter_Reply_UnknownTarget(t *testing.T) {
 	}
 }
 
-func TestRouter_Reply_MissingMessage(t *testing.T) {
-	r := newRouter(&mockRepo{})
+// --- /reply without message (show group members) ---
+
+func TestRouter_Reply_NoArgs_UsesAllGroup(t *testing.T) {
+	repo := &mockRepo{
+		groups: []groups.Group{{Name: "all", Members: []groups.Member{um("@alice"), um("@bob")}}},
+	}
+	r := newRouter(repo)
+
+	resp := r.Handle(t.Context(), testChatID, "/reply")
+	if !strings.Contains(resp.Text, "@alice") || !strings.Contains(resp.Text, "@bob") {
+		t.Errorf("expected mentions of @alice and @bob, got %q", resp.Text)
+	}
+}
+
+func TestRouter_Reply_NoArgs_AllGroupNotFound(t *testing.T) {
+	repo := &mockRepo{
+		groups: []groups.Group{{Name: "team", Members: []groups.Member{um("@alice")}}},
+	}
+	r := newRouter(repo)
+
+	resp := r.Handle(t.Context(), testChatID, "/reply")
+	if !strings.Contains(resp.Text, "Unknown target") {
+		t.Errorf("expected unknown target error when 'all' group doesn't exist, got %q", resp.Text)
+	}
+}
+
+func TestRouter_Reply_GroupNoMessage_ShowsMembers(t *testing.T) {
+	repo := &mockRepo{
+		groups: []groups.Group{{Name: "devs", Members: []groups.Member{um("@alice"), um("@bob")}}},
+	}
+	r := newRouter(repo)
+
+	resp := r.Handle(t.Context(), testChatID, "/reply devs")
+	if !strings.Contains(resp.Text, "@alice") || !strings.Contains(resp.Text, "@bob") {
+		t.Errorf("expected mentions of @alice and @bob, got %q", resp.Text)
+	}
+}
+
+func TestRouter_Reply_AllNoMessage_ShowsMembers(t *testing.T) {
+	repo := &mockRepo{
+		groups: []groups.Group{{Name: "all", Members: []groups.Member{um("@alice"), um("@bob")}}},
+	}
+	r := newRouter(repo)
+
 	resp := r.Handle(t.Context(), testChatID, "/reply all")
-	if !strings.Contains(resp.Text, "Usage") {
-		t.Errorf("expected usage message, got %q", resp.Text)
+	if !strings.Contains(resp.Text, "@alice") || !strings.Contains(resp.Text, "@bob") {
+		t.Errorf("expected mentions of @alice and @bob, got %q", resp.Text)
+	}
+}
+
+func TestRouter_Reply_GroupNoMessage_UnknownGroup(t *testing.T) {
+	r := newRouter(&mockRepo{})
+	resp := r.Handle(t.Context(), testChatID, "/reply unknowngroup")
+	if !strings.Contains(resp.Text, "Unknown target") {
+		t.Errorf("expected unknown target error, got %q", resp.Text)
+	}
+}
+
+func TestRouter_Reply_GroupNoMessage_EmptyGroup(t *testing.T) {
+	repo := &mockRepo{
+		groups: []groups.Group{{Name: "qa", Members: []groups.Member{}}},
+	}
+	r := newRouter(repo)
+
+	resp := r.Handle(t.Context(), testChatID, "/reply qa")
+	if !strings.Contains(resp.Text, "empty") {
+		t.Errorf("expected empty group error, got %q", resp.Text)
 	}
 }
 

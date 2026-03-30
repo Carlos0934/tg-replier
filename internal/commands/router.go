@@ -138,14 +138,50 @@ func (r *Router) handleGroup(ctx context.Context, args []string) Response {
 }
 
 func (r *Router) handleReply(ctx context.Context, _ int64, args []string) Response {
-	if len(args) < 2 {
-		return Response{Text: "Usage: /reply <target> <message>"}
+	// Case C: /reply with no args → auto-use "all" group with empty message
+	if len(args) == 0 {
+		return r.handleReplyGroup(ctx, "all", "")
 	}
 
+	// Case A & B: /reply <group> with no message OR /reply all (no message)
+	if len(args) == 1 {
+		target := args[0]
+		return r.showGroupMembers(ctx, target)
+	}
+
+	// Normal case: /reply <group> <message>
 	target := args[0]
 	message := strings.Join(args[1:], " ")
-
 	return r.handleReplyGroup(ctx, target, message)
+}
+
+// showGroupMembers displays the members of a named group without sending a message.
+// Used when /reply is called without a message.
+func (r *Router) showGroupMembers(ctx context.Context, groupName string) Response {
+	list, err := r.groups.List(ctx)
+	if err != nil {
+		return Response{Text: fmt.Sprintf("Error: %v", err)}
+	}
+
+	var target *groups.Group
+	for i := range list {
+		if list[i].Name == groupName {
+			target = &list[i]
+			break
+		}
+	}
+	if target == nil {
+		return Response{Text: fmt.Sprintf("Unknown target %q. Use a group name.", groupName)}
+	}
+	if len(target.Members) == 0 {
+		return Response{Text: fmt.Sprintf("Group %q is empty.", groupName)}
+	}
+
+	usernames := make([]string, len(target.Members))
+	for i, m := range target.Members {
+		usernames[i] = m.DisplayName()
+	}
+	return Response{Text: buildMentions(usernames)}
 }
 
 // handleReplyGroup resolves a named group target.
