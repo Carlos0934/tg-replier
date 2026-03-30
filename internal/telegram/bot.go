@@ -43,7 +43,7 @@ type Bot struct {
 // New creates a Bot, initialises the Telegram client and sender adapter,
 // wires the commands router, and registers all command handlers.
 // Call Start to begin polling.
-func New(cfg *config.Config, groupsSvc *groups.Service) (*Bot, error) {
+func New(cfg *config.Config, groupsSvc *groups.Service, version string) (*Bot, error) {
 	b := &Bot{}
 
 	opts := []bot.Option{
@@ -58,7 +58,7 @@ func New(cfg *config.Config, groupsSvc *groups.Service) (*Bot, error) {
 	b.sender = client
 	b.meGetter = client
 
-	b.router = commands.New(groupsSvc)
+	b.router = commands.New(groupsSvc, version)
 	b.registerHandlers()
 
 	return b, nil

@@ -1,6 +1,8 @@
 # ---- Build stage ----
 FROM golang:1.25-alpine AS build
 
+ARG VERSION=dev
+
 WORKDIR /src
 
 # Cache module downloads before copying full source
@@ -10,7 +12,7 @@ RUN go mod download
 COPY . .
 
 # Static binary — no cgo, no external deps at runtime
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /bin/tg-replier .
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X main.version=$VERSION" -o /bin/tg-replier .
 
 # ---- Runtime stage ----
 FROM alpine:3.21

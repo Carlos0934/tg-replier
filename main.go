@@ -12,6 +12,8 @@ import (
 	"tg-replier/internal/telegram"
 )
 
+var version = "dev"
+
 func main() {
 	// 1. Config
 	cfg, err := config.Load()
@@ -29,7 +31,7 @@ func main() {
 	groupsSvc := groups.New(store)
 
 	// 4. Telegram transport
-	b, err := telegram.New(cfg, groupsSvc)
+	b, err := telegram.New(cfg, groupsSvc, version)
 	if err != nil {
 		log.Fatalf("bot: %v", err)
 	}

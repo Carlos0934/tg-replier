@@ -52,7 +52,7 @@ func um(handle string) groups.Member {
 // newRouter creates a Router with mock dependencies for testing.
 func newRouter(repo *mockRepo) *commands.Router {
 	groupsSvc := groups.New(repo)
-	return commands.New(groupsSvc)
+	return commands.New(groupsSvc, "test")
 }
 
 // testChatID is a fixed chat ID used in tests that don't care about the value.

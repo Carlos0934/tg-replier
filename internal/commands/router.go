@@ -25,13 +25,15 @@ type Response struct {
 // Router parses slash commands and dispatches to domain services.
 // It has NO dependency on any transport package (Telegram, HTTP, etc.).
 type Router struct {
-	groups *groups.Service
+	groups  *groups.Service
+	version string
 }
 
 // New creates a Router wired to the given domain services.
-func New(groupsSvc *groups.Service) *Router {
+func New(groupsSvc *groups.Service, version string) *Router {
 	return &Router{
-		groups: groupsSvc,
+		groups:  groupsSvc,
+		version: version,
 	}
 }
 
@@ -51,6 +53,8 @@ func (r *Router) Handle(ctx context.Context, chatID int64, text string) Response
 	switch cmd {
 	case "/start":
 		return r.handleStart()
+	case "/version":
+		return r.handleVersion()
 	case "/group":
 		return r.handleGroup(ctx, parts[1:])
 	case "/reply":
@@ -62,6 +66,10 @@ func (r *Router) Handle(ctx context.Context, chatID int64, text string) Response
 
 func (r *Router) handleStart() Response {
 	return Response{Text: "Welcome to TG-Replier! Use /group and /reply to manage reply groups."}
+}
+
+func (r *Router) handleVersion() Response {
+	return Response{Text: "TG-Replier v" + r.version}
 }
 
 func (r *Router) handleGroup(ctx context.Context, args []string) Response {
