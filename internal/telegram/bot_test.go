@@ -34,7 +34,6 @@ func TestStart_CachesBotUsername(t *testing.T) {
 
 	b := &Bot{
 		meGetter: me,
-		tracker:  noopTracker{},
 	}
 
 	// Simulate the GetMe + cache portion of Start() (we cannot call
@@ -85,7 +84,6 @@ func TestStart_GetMeError(t *testing.T) {
 	me := &spyMeGetter{err: errors.New("network failure")}
 	b := &Bot{
 		meGetter: me,
-		tracker:  noopTracker{},
 	}
 
 	// Simulate Start()'s error path.

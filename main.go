@@ -19,7 +19,7 @@ func main() {
 		log.Fatalf("config: %v", err)
 	}
 
-	// 2. Storage adapter (implements both groups.Repository and members.Tracker)
+	// 2. Storage adapter (implements groups.Repository)
 	store, err := jsonstorage.New(cfg.DataDir)
 	if err != nil {
 		log.Fatalf("storage: %v", err)
@@ -28,8 +28,8 @@ func main() {
 	// 3. Domain services
 	groupsSvc := groups.New(store)
 
-	// 4. Telegram transport (tracker injected for passive member tracking)
-	b, err := telegram.New(cfg, groupsSvc, store)
+	// 4. Telegram transport
+	b, err := telegram.New(cfg, groupsSvc)
 	if err != nil {
 		log.Fatalf("bot: %v", err)
 	}

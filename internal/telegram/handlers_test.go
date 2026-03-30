@@ -12,7 +12,7 @@ import (
 
 // TestHandleCommand_NilMessage verifies the nil-message guard doesn't panic.
 func TestHandleCommand_NilMessage(t *testing.T) {
-	b := &Bot{tracker: noopTracker{}}
+	b := &Bot{}
 	update := &models.Update{} // Message is nil
 	// Must not panic even with nil router, because the nil-message guard returns early.
 	b.handleCommand(t.Context(), nil, update)
@@ -20,7 +20,7 @@ func TestHandleCommand_NilMessage(t *testing.T) {
 
 // TestDefaultHandler_NilMessage verifies the default handler doesn't panic.
 func TestDefaultHandler_NilMessage(t *testing.T) {
-	b := &Bot{tracker: noopTracker{}}
+	b := &Bot{}
 	update := &models.Update{}
 	b.defaultHandler(t.Context(), nil, update)
 }
@@ -55,26 +55,6 @@ func (s *spySender) SendMessage(_ context.Context, params *bot.SendMessageParams
 	return &models.Message{}, nil
 }
 
-// --- spy tracker for tracking tests ---
-
-type spyTracker struct {
-	tracked []trackedCall
-}
-
-type trackedCall struct {
-	chatID   int64
-	username string
-}
-
-func (s *spyTracker) Track(_ context.Context, chatID int64, username string) error {
-	s.tracked = append(s.tracked, trackedCall{chatID: chatID, username: username})
-	return nil
-}
-
-func (s *spyTracker) List(_ context.Context, _ int64) ([]string, error) {
-	return nil, nil
-}
-
 // TestHandleCommand_DelegatesToRouter proves that when a valid Telegram
 // update arrives, handleCommand forwards the message text and chatID to the
 // commandHandler (Router) and does NOT implement business logic itself.
@@ -83,9 +63,8 @@ func TestHandleCommand_DelegatesToRouter(t *testing.T) {
 		response: commands.Response{Text: "routed ok"},
 	}
 	ss := &spySender{}
-	st := &spyTracker{}
 
-	b := &Bot{router: spy, sender: ss, tracker: st}
+	b := &Bot{router: spy, sender: ss}
 
 	update := &models.Update{
 		Message: &models.Message{
@@ -134,8 +113,7 @@ func TestHandleCommand_RouterReceivesExactText(t *testing.T) {
 				response: commands.Response{Text: "ok"},
 			}
 			ss := &spySender{}
-			st := &spyTracker{}
-			b := &Bot{router: spy, sender: ss, tracker: st}
+			b := &Bot{router: spy, sender: ss}
 
 			update := &models.Update{
 				Message: &models.Message{
@@ -181,7 +159,7 @@ func TestHandleCommand_ForwardsParseMode(t *testing.T) {
 				},
 			}
 			ss := &spySender{}
-			b := &Bot{router: spy, sender: ss, tracker: noopTracker{}}
+			b := &Bot{router: spy, sender: ss}
 
 			update := &models.Update{
 				Message: &models.Message{
@@ -206,85 +184,12 @@ func TestHandleCommand_ForwardsParseMode(t *testing.T) {
 	}
 }
 
-// TestDefaultHandler_TracksUsername proves passive member tracking on non-command messages.
-func TestDefaultHandler_TracksUsername(t *testing.T) {
-	st := &spyTracker{}
-	b := &Bot{tracker: st}
-
-	update := &models.Update{
-		Message: &models.Message{
-			Text: "hello everyone",
-			Chat: models.Chat{ID: 123},
-			From: &models.User{Username: "dave"},
-		},
-	}
-
-	b.defaultHandler(t.Context(), nil, update)
-
-	if len(st.tracked) != 1 {
-		t.Fatalf("expected 1 tracked call, got %d", len(st.tracked))
-	}
-	if st.tracked[0].chatID != 123 {
-		t.Errorf("expected chatID 123, got %d", st.tracked[0].chatID)
-	}
-	if st.tracked[0].username != "dave" {
-		t.Errorf("expected username %q, got %q", "dave", st.tracked[0].username)
-	}
-}
-
-// TestDefaultHandler_SkipsEmptyUsername verifies that messages from users
-// without a username do not trigger tracking.
-func TestDefaultHandler_SkipsEmptyUsername(t *testing.T) {
-	st := &spyTracker{}
-	b := &Bot{tracker: st}
-
-	update := &models.Update{
-		Message: &models.Message{
-			Text: "hello",
-			Chat: models.Chat{ID: 123},
-			From: &models.User{Username: ""},
-		},
-	}
-
-	b.defaultHandler(t.Context(), nil, update)
-
-	if len(st.tracked) != 0 {
-		t.Errorf("expected 0 tracked calls, got %d", len(st.tracked))
-	}
-}
-
-// TestHandleCommand_TracksCommandSender verifies that command senders
-// are also passively tracked.
-func TestHandleCommand_TracksCommandSender(t *testing.T) {
-	spy := &spyRouter{response: commands.Response{Text: "ok"}}
-	ss := &spySender{}
-	st := &spyTracker{}
-	b := &Bot{router: spy, sender: ss, tracker: st}
-
-	update := &models.Update{
-		Message: &models.Message{
-			Text: "/start",
-			Chat: models.Chat{ID: 456},
-			From: &models.User{Username: "alice"},
-		},
-	}
-
-	b.handleCommand(t.Context(), nil, update)
-
-	if len(st.tracked) != 1 {
-		t.Fatalf("expected 1 tracked call, got %d", len(st.tracked))
-	}
-	if st.tracked[0].username != "alice" {
-		t.Errorf("expected username %q, got %q", "alice", st.tracked[0].username)
-	}
-}
-
 // TestHandleCommand_NoDMSendCalls verifies that no DM send calls happen.
 // The sender should only be called once (the reply in the same chat).
 func TestHandleCommand_NoDMSendCalls(t *testing.T) {
 	spy := &spyRouter{response: commands.Response{Text: "mentioned"}}
 	ss := &spySender{}
-	b := &Bot{router: spy, sender: ss, tracker: noopTracker{}}
+	b := &Bot{router: spy, sender: ss}
 
 	update := &models.Update{
 		Message: &models.Message{
@@ -306,72 +211,6 @@ func TestHandleCommand_NoDMSendCalls(t *testing.T) {
 	}
 }
 
-// TestDefaultHandler_TracksJoinEvent proves that when new members join a
-// chat, their usernames are tracked in the roster.
-func TestDefaultHandler_TracksJoinEvent(t *testing.T) {
-	st := &spyTracker{}
-	b := &Bot{tracker: st}
-
-	update := &models.Update{
-		Message: &models.Message{
-			Chat: models.Chat{ID: 200},
-			From: &models.User{Username: ""},
-			NewChatMembers: []models.User{
-				{Username: "newguy"},
-				{Username: "anothernew"},
-				{Username: ""}, // user without username — should be skipped
-			},
-		},
-	}
-
-	b.defaultHandler(t.Context(), nil, update)
-
-	if len(st.tracked) != 2 {
-		t.Fatalf("expected 2 tracked calls for join event, got %d", len(st.tracked))
-	}
-	if st.tracked[0].chatID != 200 || st.tracked[0].username != "newguy" {
-		t.Errorf("tracked[0] = %+v, want chatID=200 username=newguy", st.tracked[0])
-	}
-	if st.tracked[1].chatID != 200 || st.tracked[1].username != "anothernew" {
-		t.Errorf("tracked[1] = %+v, want chatID=200 username=anothernew", st.tracked[1])
-	}
-}
-
-// TestDefaultHandler_TracksMessageAndJoinCombined proves that when a message
-// contains both a From user and NewChatMembers, all are tracked.
-func TestDefaultHandler_TracksMessageAndJoinCombined(t *testing.T) {
-	st := &spyTracker{}
-	b := &Bot{tracker: st}
-
-	update := &models.Update{
-		Message: &models.Message{
-			Text: "Welcome!",
-			Chat: models.Chat{ID: 300},
-			From: &models.User{Username: "greeter"},
-			NewChatMembers: []models.User{
-				{Username: "joiner"},
-			},
-		},
-	}
-
-	b.defaultHandler(t.Context(), nil, update)
-
-	if len(st.tracked) != 2 {
-		t.Fatalf("expected 2 tracked calls (sender + joiner), got %d", len(st.tracked))
-	}
-
-	usernames := make(map[string]bool)
-	for _, tc := range st.tracked {
-		usernames[tc.username] = true
-	}
-	if !usernames["greeter"] {
-		t.Error("expected 'greeter' to be tracked")
-	}
-	if !usernames["joiner"] {
-		t.Error("expected 'joiner' to be tracked")
-	}
-}
-
 // --- Group command addressing tests ---
 
 // TestHandleCommand_BareCommandInGroup_Ignored verifies that a bare command
@@ -379,8 +218,7 @@ func TestDefaultHandler_TracksMessageAndJoinCombined(t *testing.T) {
 func TestHandleCommand_BareCommandInGroup_Ignored(t *testing.T) {
 	spy := &spyRouter{response: commands.Response{Text: "should not see this"}}
 	ss := &spySender{}
-	st := &spyTracker{}
-	b := &Bot{router: spy, sender: ss, tracker: st, botUsername: "mybot"}
+	b := &Bot{router: spy, sender: ss, botUsername: "mybot"}
 
 	update := &models.Update{
 		Message: &models.Message{
@@ -405,8 +243,7 @@ func TestHandleCommand_BareCommandInGroup_Ignored(t *testing.T) {
 func TestHandleCommand_AddressedCommandInGroup_Routed(t *testing.T) {
 	spy := &spyRouter{response: commands.Response{Text: "ok"}}
 	ss := &spySender{}
-	st := &spyTracker{}
-	b := &Bot{router: spy, sender: ss, tracker: st, botUsername: "mybot"}
+	b := &Bot{router: spy, sender: ss, botUsername: "mybot"}
 
 	update := &models.Update{
 		Message: &models.Message{
@@ -434,8 +271,7 @@ func TestHandleCommand_AddressedCommandInGroup_Routed(t *testing.T) {
 func TestHandleCommand_OtherBotInGroup_Ignored(t *testing.T) {
 	spy := &spyRouter{response: commands.Response{Text: "should not see this"}}
 	ss := &spySender{}
-	st := &spyTracker{}
-	b := &Bot{router: spy, sender: ss, tracker: st, botUsername: "mybot"}
+	b := &Bot{router: spy, sender: ss, botUsername: "mybot"}
 
 	update := &models.Update{
 		Message: &models.Message{
@@ -460,8 +296,7 @@ func TestHandleCommand_OtherBotInGroup_Ignored(t *testing.T) {
 func TestHandleCommand_BareCommandInPrivate_Processed(t *testing.T) {
 	spy := &spyRouter{response: commands.Response{Text: "ok"}}
 	ss := &spySender{}
-	st := &spyTracker{}
-	b := &Bot{router: spy, sender: ss, tracker: st, botUsername: "mybot"}
+	b := &Bot{router: spy, sender: ss, botUsername: "mybot"}
 
 	update := &models.Update{
 		Message: &models.Message{
@@ -486,8 +321,7 @@ func TestHandleCommand_BareCommandInPrivate_Processed(t *testing.T) {
 func TestHandleCommand_CaseInsensitiveAddressing(t *testing.T) {
 	spy := &spyRouter{response: commands.Response{Text: "ok"}}
 	ss := &spySender{}
-	st := &spyTracker{}
-	b := &Bot{router: spy, sender: ss, tracker: st, botUsername: "MyBot"}
+	b := &Bot{router: spy, sender: ss, botUsername: "MyBot"}
 
 	update := &models.Update{
 		Message: &models.Message{

@@ -10,7 +10,6 @@ import (
 	"tg-replier/internal/commands"
 	"tg-replier/internal/config"
 	"tg-replier/internal/groups"
-	"tg-replier/internal/members"
 )
 
 // commandHandler abstracts slash-command routing so the transport layer
@@ -38,15 +37,14 @@ type Bot struct {
 	router      commandHandler
 	sender      messageSender // defaults to client; override in tests
 	meGetter    meGetter      // defaults to client; override in tests
-	tracker     members.Tracker
-	botUsername string // cached from GetMe at startup
+	botUsername string        // cached from GetMe at startup
 }
 
 // New creates a Bot, initialises the Telegram client and sender adapter,
 // wires the commands router, and registers all command handlers.
 // Call Start to begin polling.
-func New(cfg *config.Config, groupsSvc *groups.Service, tracker members.Tracker) (*Bot, error) {
-	b := &Bot{tracker: tracker}
+func New(cfg *config.Config, groupsSvc *groups.Service) (*Bot, error) {
+	b := &Bot{}
 
 	opts := []bot.Option{
 		bot.WithDefaultHandler(b.defaultHandler),
@@ -60,7 +58,7 @@ func New(cfg *config.Config, groupsSvc *groups.Service, tracker members.Tracker)
 	b.sender = client
 	b.meGetter = client
 
-	b.router = commands.New(groupsSvc, tracker, b)
+	b.router = commands.New(groupsSvc)
 	b.registerHandlers()
 
 	return b, nil
@@ -76,16 +74,4 @@ func (b *Bot) Start(ctx context.Context) error {
 	b.botUsername = me.Username
 	b.client.Start(ctx)
 	return nil
-}
-
-// GetChatMemberCount returns the total number of members in a chat
-// by calling the Telegram API. It implements commands.ChatMemberCounter.
-func (b *Bot) GetChatMemberCount(ctx context.Context, chatID int64) (int, error) {
-	count, err := b.client.GetChatMemberCount(ctx, &bot.GetChatMemberCountParams{
-		ChatID: chatID,
-	})
-	if err != nil {
-		return 0, err
-	}
-	return count, nil
 }

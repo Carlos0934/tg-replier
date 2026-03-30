@@ -1,12 +1,13 @@
 services:
-  tg-replier:
-    build:
-      context: .
-      dockerfile: Dockerfile
+  bot:
+    image: ghcr.io/carlos0934/tg-replier:latest
     container_name: tg-replier
     restart: unless-stopped
     env_file:
       - .env
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     environment:
       DATA_DIR: /app/data
     volumes:

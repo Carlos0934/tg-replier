@@ -44,54 +44,15 @@ func (m *mockRepo) RemoveGroup(_ context.Context, name string) error {
 	return groups.ErrNotFound
 }
 
-// --- mock tracker ---
-
-type mockTracker struct {
-	roster map[int64][]string
-}
-
-func newMockTracker(rosters map[int64][]string) *mockTracker {
-	if rosters == nil {
-		rosters = make(map[int64][]string)
-	}
-	return &mockTracker{roster: rosters}
-}
-
-func (m *mockTracker) Track(_ context.Context, chatID int64, username string) error {
-	m.roster[chatID] = append(m.roster[chatID], username)
-	return nil
-}
-
-func (m *mockTracker) List(_ context.Context, chatID int64) ([]string, error) {
-	return m.roster[chatID], nil
-}
-
-// --- mock ChatMemberCounter ---
-
-type mockCounter struct {
-	count int
-	err   error
-}
-
-func (m *mockCounter) GetChatMemberCount(_ context.Context, _ int64) (int, error) {
-	return m.count, m.err
-}
-
 // Helpers for readable Member construction.
 func um(handle string) groups.Member {
 	return groups.Member{Kind: "username", Handle: handle}
 }
 
-// newRouter creates a Router with mock dependencies for testing (nil counter).
-func newRouter(repo *mockRepo, tracker *mockTracker) *commands.Router {
+// newRouter creates a Router with mock dependencies for testing.
+func newRouter(repo *mockRepo) *commands.Router {
 	groupsSvc := groups.New(repo)
-	return commands.New(groupsSvc, tracker, nil)
-}
-
-// newRouterWithCounter creates a Router with a ChatMemberCounter for testing.
-func newRouterWithCounter(repo *mockRepo, tracker *mockTracker, counter commands.ChatMemberCounter) *commands.Router {
-	groupsSvc := groups.New(repo)
-	return commands.New(groupsSvc, tracker, counter)
+	return commands.New(groupsSvc)
 }
 
 // testChatID is a fixed chat ID used in tests that don't care about the value.
@@ -100,7 +61,7 @@ const testChatID int64 = 42
 // --- /start ---
 
 func TestRouter_Start(t *testing.T) {
-	r := newRouter(&mockRepo{}, newMockTracker(nil))
+	r := newRouter(&mockRepo{})
 	resp := r.Handle(t.Context(), testChatID, "/start")
 	if !strings.Contains(resp.Text, "Welcome") {
 		t.Errorf("expected welcome text, got %q", resp.Text)
@@ -111,7 +72,7 @@ func TestRouter_Start(t *testing.T) {
 
 func TestRouter_GroupSet_Success(t *testing.T) {
 	repo := &mockRepo{}
-	r := newRouter(repo, newMockTracker(nil))
+	r := newRouter(repo)
 
 	resp := r.Handle(t.Context(), testChatID, "/group set team @alice @bob")
 	if !strings.Contains(resp.Text, `"team" created`) {
@@ -126,7 +87,7 @@ func TestRouter_GroupSet_Duplicate(t *testing.T) {
 	repo := &mockRepo{
 		groups: []groups.Group{{Name: "team", Members: []groups.Member{um("@alice")}}},
 	}
-	r := newRouter(repo, newMockTracker(nil))
+	r := newRouter(repo)
 
 	resp := r.Handle(t.Context(), testChatID, "/group set team @bob")
 	if !strings.Contains(resp.Text, "already exists") {
@@ -135,7 +96,7 @@ func TestRouter_GroupSet_Duplicate(t *testing.T) {
 }
 
 func TestRouter_GroupSet_BadArgs(t *testing.T) {
-	r := newRouter(&mockRepo{}, newMockTracker(nil))
+	r := newRouter(&mockRepo{})
 	resp := r.Handle(t.Context(), testChatID, "/group set team")
 	if !strings.Contains(resp.Text, "Usage") {
 		t.Errorf("expected usage message, got %q", resp.Text)
@@ -144,7 +105,7 @@ func TestRouter_GroupSet_BadArgs(t *testing.T) {
 
 func TestRouter_GroupSet_InvalidBareWord(t *testing.T) {
 	repo := &mockRepo{}
-	r := newRouter(repo, newMockTracker(nil))
+	r := newRouter(repo)
 
 	resp := r.Handle(t.Context(), testChatID, "/group set ops alice")
 	if !strings.Contains(resp.Text, "Invalid member") {
@@ -157,7 +118,7 @@ func TestRouter_GroupSet_InvalidBareWord(t *testing.T) {
 
 func TestRouter_GroupSet_NumericID_Rejected(t *testing.T) {
 	repo := &mockRepo{}
-	r := newRouter(repo, newMockTracker(nil))
+	r := newRouter(repo)
 
 	resp := r.Handle(t.Context(), testChatID, "/group set ops 987654321")
 	if !strings.Contains(resp.Text, "Invalid member") {
@@ -170,7 +131,7 @@ func TestRouter_GroupSet_NumericID_Rejected(t *testing.T) {
 
 func TestRouter_GroupSet_MixedTokens_RejectsNumeric(t *testing.T) {
 	repo := &mockRepo{}
-	r := newRouter(repo, newMockTracker(nil))
+	r := newRouter(repo)
 
 	resp := r.Handle(t.Context(), testChatID, "/group set ops 111222333 @dave")
 	if !strings.Contains(resp.Text, "Invalid member") {
@@ -181,30 +142,13 @@ func TestRouter_GroupSet_MixedTokens_RejectsNumeric(t *testing.T) {
 	}
 }
 
-// Task 3.4: Reject reserved name "all" at group creation.
-func TestRouter_GroupSet_RejectsReservedAll(t *testing.T) {
-	for _, name := range []string{"all", "ALL", "All"} {
-		t.Run(name, func(t *testing.T) {
-			repo := &mockRepo{}
-			r := newRouter(repo, newMockTracker(nil))
-			resp := r.Handle(t.Context(), testChatID, "/group set "+name+" @alice")
-			if !strings.Contains(resp.Text, "reserved") {
-				t.Errorf("expected reserved name error, got %q", resp.Text)
-			}
-			if len(repo.groups) != 0 {
-				t.Errorf("expected no groups created, got %d", len(repo.groups))
-			}
-		})
-	}
-}
-
 // --- /group delete ---
 
 func TestRouter_GroupDelete_Success(t *testing.T) {
 	repo := &mockRepo{
 		groups: []groups.Group{{Name: "team", Members: []groups.Member{um("@alice")}}},
 	}
-	r := newRouter(repo, newMockTracker(nil))
+	r := newRouter(repo)
 
 	resp := r.Handle(t.Context(), testChatID, "/group delete team")
 	if !strings.Contains(resp.Text, `"team" deleted`) {
@@ -216,7 +160,7 @@ func TestRouter_GroupDelete_Success(t *testing.T) {
 }
 
 func TestRouter_GroupDelete_NotFound(t *testing.T) {
-	r := newRouter(&mockRepo{}, newMockTracker(nil))
+	r := newRouter(&mockRepo{})
 	resp := r.Handle(t.Context(), testChatID, "/group delete missing")
 	if !strings.Contains(resp.Text, "not found") {
 		t.Errorf("expected not-found, got %q", resp.Text)
@@ -224,7 +168,7 @@ func TestRouter_GroupDelete_NotFound(t *testing.T) {
 }
 
 func TestRouter_GroupDelete_BadArgs(t *testing.T) {
-	r := newRouter(&mockRepo{}, newMockTracker(nil))
+	r := newRouter(&mockRepo{})
 	resp := r.Handle(t.Context(), testChatID, "/group delete")
 	if !strings.Contains(resp.Text, "Usage") {
 		t.Errorf("expected usage message, got %q", resp.Text)
@@ -234,7 +178,7 @@ func TestRouter_GroupDelete_BadArgs(t *testing.T) {
 // --- /group list ---
 
 func TestRouter_GroupList_Empty(t *testing.T) {
-	r := newRouter(&mockRepo{}, newMockTracker(nil))
+	r := newRouter(&mockRepo{})
 	resp := r.Handle(t.Context(), testChatID, "/group list")
 	if !strings.Contains(resp.Text, "No groups") {
 		t.Errorf("expected empty message, got %q", resp.Text)
@@ -249,7 +193,7 @@ func TestRouter_GroupList_WithGroups(t *testing.T) {
 			{Name: "mango", Members: []groups.Member{um("@mike")}},
 		},
 	}
-	r := newRouter(repo, newMockTracker(nil))
+	r := newRouter(repo)
 	resp := r.Handle(t.Context(), testChatID, "/group list")
 
 	want := "- <b>alpha</b>: @alice, @bob\n- <b>mango</b>: @mike\n- <b>zebra</b>: @zara\n"
@@ -267,7 +211,7 @@ func TestRouter_GroupList_SingleMember(t *testing.T) {
 			{Name: "solo", Members: []groups.Member{um("@carol")}},
 		},
 	}
-	r := newRouter(repo, newMockTracker(nil))
+	r := newRouter(repo)
 	resp := r.Handle(t.Context(), testChatID, "/group list")
 
 	want := "- <b>solo</b>: @carol\n"
@@ -285,7 +229,7 @@ func TestRouter_GroupList_SingleGroupMultipleMembers(t *testing.T) {
 			{Name: "team", Members: []groups.Member{um("@alice"), um("@bob")}},
 		},
 	}
-	r := newRouter(repo, newMockTracker(nil))
+	r := newRouter(repo)
 	resp := r.Handle(t.Context(), testChatID, "/group list")
 
 	want := "- <b>team</b>: @alice, @bob\n"
@@ -305,7 +249,7 @@ func TestRouter_GroupList_CaseInsensitiveSort(t *testing.T) {
 			{Name: "Mango", Members: []groups.Member{um("@mike")}},
 		},
 	}
-	r := newRouter(repo, newMockTracker(nil))
+	r := newRouter(repo)
 	resp := r.Handle(t.Context(), testChatID, "/group list")
 
 	want := "- <b>alpha</b>: @alice\n- <b>Mango</b>: @mike\n- <b>Zebra</b>: @zara\n"
@@ -315,15 +259,12 @@ func TestRouter_GroupList_CaseInsensitiveSort(t *testing.T) {
 }
 
 func TestRouter_GroupList_NumericMember_DisplaysChatID(t *testing.T) {
-	// Under the mention-only model, groups should only contain @username
-	// members. However, verify that if a group somehow has only a Handle,
-	// the list display works correctly.
 	repo := &mockRepo{
 		groups: []groups.Group{
 			{Name: "ops", Members: []groups.Member{um("@ops_admin")}},
 		},
 	}
-	r := newRouter(repo, newMockTracker(nil))
+	r := newRouter(repo)
 	resp := r.Handle(t.Context(), testChatID, "/group list")
 
 	want := "- <b>ops</b>: @ops_admin\n"
@@ -334,7 +275,7 @@ func TestRouter_GroupList_NumericMember_DisplaysChatID(t *testing.T) {
 
 func TestRouter_GroupList_Error(t *testing.T) {
 	repo := &mockRepo{listErr: errors.New("disk I/O failure")}
-	r := newRouter(repo, newMockTracker(nil))
+	r := newRouter(repo)
 	resp := r.Handle(t.Context(), testChatID, "/group list")
 
 	if !strings.Contains(resp.Text, "Error:") {
@@ -348,7 +289,7 @@ func TestRouter_GroupList_Error(t *testing.T) {
 // --- /group with missing sub-command ---
 
 func TestRouter_Group_NoSubcommand(t *testing.T) {
-	r := newRouter(&mockRepo{}, newMockTracker(nil))
+	r := newRouter(&mockRepo{})
 	resp := r.Handle(t.Context(), testChatID, "/group")
 	if !strings.Contains(resp.Text, "Usage") {
 		t.Errorf("expected usage message, got %q", resp.Text)
@@ -356,7 +297,7 @@ func TestRouter_Group_NoSubcommand(t *testing.T) {
 }
 
 func TestRouter_Group_UnknownSubcommand(t *testing.T) {
-	r := newRouter(&mockRepo{}, newMockTracker(nil))
+	r := newRouter(&mockRepo{})
 	resp := r.Handle(t.Context(), testChatID, "/group foo")
 	if !strings.Contains(resp.Text, "Unknown sub-command") {
 		t.Errorf("expected unknown sub-command, got %q", resp.Text)
@@ -369,7 +310,7 @@ func TestRouter_Reply_NamedGroup_Success(t *testing.T) {
 	repo := &mockRepo{
 		groups: []groups.Group{{Name: "devs", Members: []groups.Member{um("@alice"), um("@bob")}}},
 	}
-	r := newRouter(repo, newMockTracker(nil))
+	r := newRouter(repo)
 
 	resp := r.Handle(t.Context(), testChatID, "/reply devs Stand-up time")
 	if !strings.Contains(resp.Text, "@alice") || !strings.Contains(resp.Text, "@bob") {
@@ -381,7 +322,7 @@ func TestRouter_Reply_NamedGroup_Success(t *testing.T) {
 }
 
 func TestRouter_Reply_UnknownTarget(t *testing.T) {
-	r := newRouter(&mockRepo{}, newMockTracker(nil))
+	r := newRouter(&mockRepo{})
 	resp := r.Handle(t.Context(), testChatID, "/reply backend hello")
 	if !strings.Contains(resp.Text, "Unknown target") {
 		t.Errorf("expected unknown target error, got %q", resp.Text)
@@ -389,7 +330,7 @@ func TestRouter_Reply_UnknownTarget(t *testing.T) {
 }
 
 func TestRouter_Reply_MissingMessage(t *testing.T) {
-	r := newRouter(&mockRepo{}, newMockTracker(nil))
+	r := newRouter(&mockRepo{})
 	resp := r.Handle(t.Context(), testChatID, "/reply all")
 	if !strings.Contains(resp.Text, "Usage") {
 		t.Errorf("expected usage message, got %q", resp.Text)
@@ -400,94 +341,17 @@ func TestRouter_Reply_EmptyGroup(t *testing.T) {
 	repo := &mockRepo{
 		groups: []groups.Group{{Name: "qa", Members: nil}},
 	}
-	r := newRouter(repo, newMockTracker(nil))
+	r := newRouter(repo)
 	resp := r.Handle(t.Context(), testChatID, "/reply qa Deploy ready")
 	if !strings.Contains(resp.Text, "empty") {
 		t.Errorf("expected empty group error, got %q", resp.Text)
 	}
 }
 
-// --- /reply all (reserved keyword) ---
-
-func TestRouter_Reply_All_HappyPath(t *testing.T) {
-	tracker := newMockTracker(map[int64][]string{
-		testChatID: {"alice", "bob", "carlos"},
-	})
-	r := newRouter(&mockRepo{}, tracker)
-
-	resp := r.Handle(t.Context(), testChatID, "/reply all Heads up!")
-	if !strings.Contains(resp.Text, "@alice") || !strings.Contains(resp.Text, "@bob") || !strings.Contains(resp.Text, "@carlos") {
-		t.Errorf("expected all mentions, got %q", resp.Text)
-	}
-	if !strings.Contains(resp.Text, "Heads up!") {
-		t.Errorf("expected message text, got %q", resp.Text)
-	}
-	if !strings.Contains(resp.Text, "roster may be incomplete") {
-		t.Errorf("expected partial-roster disclaimer, got %q", resp.Text)
-	}
-}
-
-func TestRouter_Reply_All_EmptyRoster(t *testing.T) {
-	tracker := newMockTracker(nil) // no members tracked
-	r := newRouter(&mockRepo{}, tracker)
-
-	resp := r.Handle(t.Context(), testChatID, "/reply all message")
-	if !strings.Contains(resp.Text, "No members known") {
-		t.Errorf("expected empty roster warning, got %q", resp.Text)
-	}
-}
-
-// Task 3.5: Case-insensitive "all" keyword.
-func TestRouter_Reply_All_CaseInsensitive(t *testing.T) {
-	for _, keyword := range []string{"all", "ALL", "All", "aLl"} {
-		t.Run(keyword, func(t *testing.T) {
-			tracker := newMockTracker(map[int64][]string{
-				testChatID: {"alice"},
-			})
-			r := newRouter(&mockRepo{}, tracker)
-
-			resp := r.Handle(t.Context(), testChatID, "/reply "+keyword+" msg")
-			if !strings.Contains(resp.Text, "@alice") {
-				t.Errorf("expected @alice mention for keyword %q, got %q", keyword, resp.Text)
-			}
-		})
-	}
-}
-
-func TestRouter_Reply_All_SingleKnownMember(t *testing.T) {
-	tracker := newMockTracker(map[int64][]string{
-		testChatID: {"onlyone"},
-	})
-	r := newRouter(&mockRepo{}, tracker)
-
-	resp := r.Handle(t.Context(), testChatID, "/reply all hello")
-	if !strings.Contains(resp.Text, "@onlyone") {
-		t.Errorf("expected single member mention, got %q", resp.Text)
-	}
-	if !strings.Contains(resp.Text, "roster may be incomplete") {
-		t.Errorf("expected incomplete roster disclaimer, got %q", resp.Text)
-	}
-}
-
-func TestRouter_Reply_All_PartialRoster(t *testing.T) {
-	tracker := newMockTracker(map[int64][]string{
-		testChatID: {"alice", "bob"},
-	})
-	r := newRouter(&mockRepo{}, tracker)
-
-	resp := r.Handle(t.Context(), testChatID, "/reply all message")
-	if !strings.Contains(resp.Text, "@alice") || !strings.Contains(resp.Text, "@bob") {
-		t.Errorf("expected both mentions, got %q", resp.Text)
-	}
-	if !strings.Contains(resp.Text, "roster may be incomplete") {
-		t.Errorf("expected partial-roster disclaimer, got %q", resp.Text)
-	}
-}
-
 // --- unknown command ---
 
 func TestRouter_UnknownCommand(t *testing.T) {
-	r := newRouter(&mockRepo{}, newMockTracker(nil))
+	r := newRouter(&mockRepo{})
 	resp := r.Handle(t.Context(), testChatID, "/unknown")
 	if !strings.Contains(resp.Text, "Unknown command") {
 		t.Errorf("expected unknown command, got %q", resp.Text)
@@ -497,7 +361,7 @@ func TestRouter_UnknownCommand(t *testing.T) {
 // --- empty input ---
 
 func TestRouter_EmptyInput(t *testing.T) {
-	r := newRouter(&mockRepo{}, newMockTracker(nil))
+	r := newRouter(&mockRepo{})
 	resp := r.Handle(t.Context(), testChatID, "")
 	if resp.Text != "Empty command." {
 		t.Errorf("expected empty command response, got %q", resp.Text)
@@ -508,7 +372,7 @@ func TestRouter_EmptyInput(t *testing.T) {
 
 func TestRouter_GroupSet_QuotedName(t *testing.T) {
 	repo := &mockRepo{}
-	r := newRouter(repo, newMockTracker(nil))
+	r := newRouter(repo)
 
 	resp := r.Handle(t.Context(), testChatID, `/group set "team alpha" @alice @bob`)
 	if !strings.Contains(resp.Text, `"team alpha" created`) {
@@ -529,7 +393,7 @@ func TestRouter_Reply_QuotedGroupName(t *testing.T) {
 	repo := &mockRepo{
 		groups: []groups.Group{{Name: "team alpha", Members: []groups.Member{um("@alice")}}},
 	}
-	r := newRouter(repo, newMockTracker(nil))
+	r := newRouter(repo)
 
 	resp := r.Handle(t.Context(), testChatID, `/reply "team alpha" hello`)
 	if !strings.Contains(resp.Text, "@alice") {
@@ -542,7 +406,7 @@ func TestRouter_Reply_QuotedGroupName(t *testing.T) {
 
 func TestRouter_Handle_MalformedQuote(t *testing.T) {
 	repo := &mockRepo{}
-	r := newRouter(repo, newMockTracker(nil))
+	r := newRouter(repo)
 
 	resp := r.Handle(t.Context(), testChatID, `/group set "unclosed @alice`)
 	if !strings.Contains(resp.Text, "Invalid command") {
@@ -559,104 +423,13 @@ func TestRouter_Reply_NoDMFormat(t *testing.T) {
 	repo := &mockRepo{
 		groups: []groups.Group{{Name: "team", Members: []groups.Member{um("@alice"), um("@bob")}}},
 	}
-	r := newRouter(repo, newMockTracker(nil))
+	r := newRouter(repo)
 
 	resp := r.Handle(t.Context(), testChatID, "/reply team hello world")
-	// The response should be a single mention string, not "Sent to N, failed M" DM format.
 	if strings.Contains(resp.Text, "Sent to") {
 		t.Errorf("response should be mention-only, not DM summary, got %q", resp.Text)
 	}
 	if !strings.Contains(resp.Text, "@alice") || !strings.Contains(resp.Text, "@bob") {
 		t.Errorf("expected mentions in response, got %q", resp.Text)
-	}
-}
-
-// --- /reply all coverage messaging tests ---
-
-// Task 3.5: Counter returns (7, 10) → "(notifying 7 of 10 members)".
-func TestRouter_Reply_All_CoverageAvailable(t *testing.T) {
-	tracker := newMockTracker(map[int64][]string{
-		testChatID: {"alice", "bob", "carol", "dave", "eve", "frank", "grace"},
-	})
-	counter := &mockCounter{count: 10}
-	r := newRouterWithCounter(&mockRepo{}, tracker, counter)
-
-	resp := r.Handle(t.Context(), testChatID, "/reply all Stand-up time")
-	if !strings.Contains(resp.Text, "(notifying 7 of 10 members)") {
-		t.Errorf("expected coverage line, got %q", resp.Text)
-	}
-}
-
-// Task 3.6: Counter returns (8, 6) → roster may be outdated.
-func TestRouter_Reply_All_StaleCache(t *testing.T) {
-	tracker := newMockTracker(map[int64][]string{
-		testChatID: {"a", "b", "c", "d", "e", "f", "g", "h"},
-	})
-	counter := &mockCounter{count: 6}
-	r := newRouterWithCounter(&mockRepo{}, tracker, counter)
-
-	resp := r.Handle(t.Context(), testChatID, "/reply all hello")
-	if !strings.Contains(resp.Text, "roster may be outdated") {
-		t.Errorf("expected stale-cache warning, got %q", resp.Text)
-	}
-	if !strings.Contains(resp.Text, "notifying 8 members") {
-		t.Errorf("expected known count in message, got %q", resp.Text)
-	}
-}
-
-// Task 3.7: Nil counter → generic fallback disclaimer.
-// Asserts: mentions are sent to all known members, generic disclaimer is present,
-// and NO numeric total appears (no "X of Y" pattern).
-func TestRouter_Reply_All_NilCounter(t *testing.T) {
-	tracker := newMockTracker(map[int64][]string{
-		testChatID: {"alice", "bob"},
-	})
-	r := newRouter(&mockRepo{}, tracker) // nil counter
-
-	resp := r.Handle(t.Context(), testChatID, "/reply all hello")
-
-	// Must contain mentions for all known members.
-	if !strings.Contains(resp.Text, "@alice") {
-		t.Errorf("expected @alice mention, got %q", resp.Text)
-	}
-	if !strings.Contains(resp.Text, "@bob") {
-		t.Errorf("expected @bob mention, got %q", resp.Text)
-	}
-	// Must contain the generic fallback disclaimer.
-	if !strings.Contains(resp.Text, "roster may be incomplete") {
-		t.Errorf("expected generic disclaimer, got %q", resp.Text)
-	}
-	// Must NOT contain any numeric total — no "notifying X of Y members" pattern.
-	if strings.Contains(resp.Text, "notifying") {
-		t.Errorf("should not contain 'notifying' with nil counter, got %q", resp.Text)
-	}
-}
-
-// Task 3.8: Counter returns error → generic fallback disclaimer.
-// Asserts: mentions are sent to all known members, generic disclaimer is present,
-// and NO numeric total appears (no "X of Y" pattern).
-func TestRouter_Reply_All_CounterError(t *testing.T) {
-	tracker := newMockTracker(map[int64][]string{
-		testChatID: {"alice", "bob"},
-	})
-	counter := &mockCounter{err: errors.New("api timeout")}
-	r := newRouterWithCounter(&mockRepo{}, tracker, counter)
-
-	resp := r.Handle(t.Context(), testChatID, "/reply all hello")
-
-	// Must contain mentions for all known members.
-	if !strings.Contains(resp.Text, "@alice") {
-		t.Errorf("expected @alice mention, got %q", resp.Text)
-	}
-	if !strings.Contains(resp.Text, "@bob") {
-		t.Errorf("expected @bob mention, got %q", resp.Text)
-	}
-	// Must contain the generic fallback disclaimer.
-	if !strings.Contains(resp.Text, "roster may be incomplete") {
-		t.Errorf("expected generic disclaimer on counter error, got %q", resp.Text)
-	}
-	// Must NOT contain any numeric total — no "notifying X of Y members" pattern.
-	if strings.Contains(resp.Text, "notifying") {
-		t.Errorf("should not contain 'notifying' on error, got %q", resp.Text)
 	}
 }

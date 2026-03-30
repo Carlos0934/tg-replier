@@ -4,11 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 
 	"tg-replier/internal/groups"
 )
@@ -16,19 +14,6 @@ import (
 // data is the on-disk JSON schema for groups.json.
 type data struct {
 	Groups map[string]groups.Group `json:"groups"`
-}
-
-// rosterEntry stores a single tracked member.
-type rosterEntry struct {
-	ChatID   int64     `json:"chat_id"`
-	Username string    `json:"username"`
-	LastSeen time.Time `json:"last_seen"`
-}
-
-// rosterData is the on-disk JSON schema for rosters.json.
-type rosterData struct {
-	// Chats maps chat ID (as string key) to its known members.
-	Chats map[string][]rosterEntry `json:"chats"`
 }
 
 // legacyGroup is a shadow struct used only during unmarshal to detect the
@@ -65,21 +50,18 @@ func promoteLegacyUsers(raw []string) []groups.Member {
 	return members
 }
 
-// Store manages persistence for groups and rosters via JSON flat files.
-// It implements both groups.Repository and members.Tracker interfaces.
+// Store manages persistence for groups via JSON flat files.
+// It implements groups.Repository interface.
 type Store struct {
 	mu      sync.Mutex
 	dataDir string
 	path    string // groups.json path
 	groups  map[string]groups.Group
-
-	rosterPath string                   // rosters.json path
-	rosters    map[string][]rosterEntry // keyed by chat ID string
 }
 
-// New initialises the store backed by groups.json and rosters.json inside dataDir.
-// If the files do not exist they are created with empty structures.
-// If they exist, they are loaded and parsed. Legacy "users" arrays are
+// New initialises the store backed by groups.json inside dataDir.
+// If the file does not exist it is created with empty structure.
+// If it exists, it is loaded and parsed. Legacy "users" arrays are
 // silently promoted to typed Members on load.
 func New(dataDir string) (*Store, error) {
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
@@ -87,8 +69,7 @@ func New(dataDir string) (*Store, error) {
 	}
 
 	fp := filepath.Join(dataDir, "groups.json")
-	rp := filepath.Join(dataDir, "rosters.json")
-	s := &Store{dataDir: dataDir, path: fp, rosterPath: rp}
+	s := &Store{dataDir: dataDir, path: fp}
 
 	// --- Load groups ---
 	_, err := os.Stat(fp)
@@ -120,29 +101,6 @@ func New(dataDir string) (*Store, error) {
 				g.Members = promoteLegacyUsers(lg.Users)
 			}
 			s.groups[k] = g
-		}
-	}
-
-	// --- Load rosters ---
-	_, err = os.Stat(rp)
-	switch {
-	case errors.Is(err, os.ErrNotExist):
-		s.rosters = make(map[string][]rosterEntry)
-		// Don't flush an empty file — it will be created on first Track.
-	case err != nil:
-		return nil, err
-	default:
-		raw, readErr := os.ReadFile(rp)
-		if readErr != nil {
-			return nil, readErr
-		}
-		var rd rosterData
-		if jsonErr := json.Unmarshal(raw, &rd); jsonErr != nil {
-			return nil, jsonErr
-		}
-		s.rosters = rd.Chats
-		if s.rosters == nil {
-			s.rosters = make(map[string][]rosterEntry)
 		}
 	}
 
@@ -189,46 +147,6 @@ func (s *Store) RemoveGroup(_ context.Context, name string) error {
 	return s.flushGroups()
 }
 
-// --- members.Tracker implementation ---
-
-// Track records a username as observed in the given chat.
-// It deduplicates by username and updates last-seen on repeat sightings.
-// Creates the roster file on first call if it does not exist.
-func (s *Store) Track(_ context.Context, chatID int64, username string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	key := fmt.Sprintf("%d", chatID)
-	entries := s.rosters[key]
-
-	now := time.Now().UTC()
-	for i, e := range entries {
-		if e.Username == username {
-			entries[i].LastSeen = now
-			entries[i].ChatID = chatID
-			s.rosters[key] = entries
-			return s.flushRosters()
-		}
-	}
-
-	s.rosters[key] = append(entries, rosterEntry{ChatID: chatID, Username: username, LastSeen: now})
-	return s.flushRosters()
-}
-
-// List returns all known usernames for the given chat.
-func (s *Store) List(_ context.Context, chatID int64) ([]string, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	key := fmt.Sprintf("%d", chatID)
-	entries := s.rosters[key]
-	names := make([]string, len(entries))
-	for i, e := range entries {
-		names[i] = e.Username
-	}
-	return names, nil
-}
-
 // --- flush helpers ---
 
 // flushGroups writes the groups state to disk. Caller must hold mu.
@@ -238,13 +156,4 @@ func (s *Store) flushGroups() error {
 		return err
 	}
 	return os.WriteFile(s.path, raw, 0o644)
-}
-
-// flushRosters writes the roster state to disk. Caller must hold mu.
-func (s *Store) flushRosters() error {
-	raw, err := json.MarshalIndent(rosterData{Chats: s.rosters}, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(s.rosterPath, raw, 0o644)
 }

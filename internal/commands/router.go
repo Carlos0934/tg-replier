@@ -8,14 +8,12 @@ import (
 	"strings"
 
 	"tg-replier/internal/groups"
-	"tg-replier/internal/members"
 )
 
 // Sentinel errors for the commands domain.
 var (
 	ErrUnknownCommand = errors.New("unknown command")
 	ErrBadArgs        = errors.New("bad arguments")
-	ErrReservedName   = errors.New("reserved group name")
 )
 
 // Response carries a text reply back to the transport layer.
@@ -24,27 +22,16 @@ type Response struct {
 	ParseMode string // "", "HTML", or "MarkdownV2"
 }
 
-// ChatMemberCounter provides the total member count for a chat.
-// Implementations typically call the Telegram API (GetChatMemberCount).
-type ChatMemberCounter interface {
-	GetChatMemberCount(ctx context.Context, chatID int64) (int, error)
-}
-
 // Router parses slash commands and dispatches to domain services.
 // It has NO dependency on any transport package (Telegram, HTTP, etc.).
 type Router struct {
-	groups  *groups.Service
-	tracker members.Tracker
-	counter ChatMemberCounter // nil-safe; triggers fallback when nil
+	groups *groups.Service
 }
 
 // New creates a Router wired to the given domain services.
-// counter may be nil — the router degrades gracefully.
-func New(groupsSvc *groups.Service, tracker members.Tracker, counter ChatMemberCounter) *Router {
+func New(groupsSvc *groups.Service) *Router {
 	return &Router{
-		groups:  groupsSvc,
-		tracker: tracker,
-		counter: counter,
+		groups: groupsSvc,
 	}
 }
 
@@ -89,11 +76,6 @@ func (r *Router) handleGroup(ctx context.Context, args []string) Response {
 			return Response{Text: "Usage: /group set <name> <@user1> ..."}
 		}
 		name := args[1]
-
-		// Reject reserved group names.
-		if strings.EqualFold(name, "all") {
-			return Response{Text: fmt.Sprintf("Name %q is reserved and cannot be used as a group name.", name)}
-		}
 
 		tokens := args[2:]
 
@@ -155,7 +137,7 @@ func (r *Router) handleGroup(ctx context.Context, args []string) Response {
 	}
 }
 
-func (r *Router) handleReply(ctx context.Context, chatID int64, args []string) Response {
+func (r *Router) handleReply(ctx context.Context, _ int64, args []string) Response {
 	if len(args) < 2 {
 		return Response{Text: "Usage: /reply <target> <message>"}
 	}
@@ -163,52 +145,7 @@ func (r *Router) handleReply(ctx context.Context, chatID int64, args []string) R
 	target := args[0]
 	message := strings.Join(args[1:], " ")
 
-	// Check for reserved "all" keyword (case-insensitive).
-	if strings.EqualFold(target, "all") {
-		return r.handleReplyAll(ctx, chatID, message)
-	}
-
-	// Named group resolution.
 	return r.handleReplyGroup(ctx, target, message)
-}
-
-// handleReplyAll resolves the "all" target from the known-member roster.
-// When a ChatMemberCounter is available, it appends coverage metadata.
-func (r *Router) handleReplyAll(ctx context.Context, chatID int64, message string) Response {
-	known, err := r.tracker.List(ctx, chatID)
-	if err != nil {
-		return Response{Text: fmt.Sprintf("Error: %v", err)}
-	}
-	if len(known) == 0 {
-		return Response{Text: "No members known yet in this chat. Members are tracked as they send messages."}
-	}
-
-	mentions := buildMentions(known)
-
-	// Build the coverage disclaimer.
-	disclaimer := r.buildCoverageDisclaimer(ctx, chatID, len(known))
-
-	text := mentions + " " + message + "\n" + disclaimer
-	return Response{Text: text}
-}
-
-// buildCoverageDisclaimer produces a parenthetical coverage line.
-// It queries the ChatMemberCounter when available and degrades gracefully.
-func (r *Router) buildCoverageDisclaimer(ctx context.Context, chatID int64, knownCount int) string {
-	if r.counter == nil {
-		return "(roster may be incomplete — only known members mentioned)"
-	}
-
-	total, err := r.counter.GetChatMemberCount(ctx, chatID)
-	if err != nil {
-		return "(roster may be incomplete — only known members mentioned)"
-	}
-
-	if knownCount > total {
-		return fmt.Sprintf("(notifying %d members — roster may be outdated)", knownCount)
-	}
-
-	return fmt.Sprintf("(notifying %d of %d members)", knownCount, total)
 }
 
 // handleReplyGroup resolves a named group target.
@@ -226,7 +163,7 @@ func (r *Router) handleReplyGroup(ctx context.Context, groupName string, message
 		}
 	}
 	if target == nil {
-		return Response{Text: fmt.Sprintf("Unknown target %q. Use a group name or \"all\".", groupName)}
+		return Response{Text: fmt.Sprintf("Unknown target %q. Use a group name.", groupName)}
 	}
 	if len(target.Members) == 0 {
 		return Response{Text: fmt.Sprintf("Group %q is empty.", groupName)}
